@@ -171,3 +171,46 @@
 
 // Month
 #define MCP795_PWRUP_MONTH_addr				( uint8_t ) ( 0x1Fu )
+
+/*
+ *		Instruction Set
+ */
+
+// Read from EEPROM
+#define MCP795_ISA_EEREAD_cmd				  ( uint8_t ) ( 0x03u )
+
+// Write from EEPROM
+#define MCP795_ISA_EEWRITE_cmd				( uint8_t ) ( 0x02u )
+
+// Reset write enable latch ( disable write operation )
+#define MCP795_ISA_EEWRDI_cmd				  ( uint8_t ) ( 0x04u )
+
+// Set the write enable latch ( enable write operation )
+#define MCP795_ISA_EEWREN_cmd				  ( uint8_t ) ( 0x06u )
+
+// Read STATUS register
+#define MCP795_ISA_SPREAD_cmd				  ( uint8_t ) ( 0x05u )
+
+// Write STATUS register
+#define MCP795_ISA_SPWRITE_cmd				( uint8_t ) ( 0x01u )
+
+// Read RTCC/SRAM array
+#define MCP795_ISA_READ_cmd					  ( uint8_t ) ( 0x13u )
+
+// Write RTC/SRAM array
+#define MCP795_ISA_WRITE_cmd				  ( uint8_t ) ( 0x12u )
+
+// Unlock ID location
+#define MCP795_ISA_UNLOCK_cmd				  ( uint8_t ) ( 0x14u )
+
+// Write to the ID locations
+#define MCP795_ISA_IDWRITE_cmd				( uint8_t ) ( 0x34u )
+
+// Read the ID locations
+#define MCP795_ISA_IDREAD_cmd				  ( uint8_t ) ( 0x33u )
+
+// Clear watchdog timer
+#define MCP795_ISA_CLRWDT_cmd			  	( uint8_t ) ( 0x44u )
+
+// Clear RAM location '0'
+#define MCP795_ISA_CLRRAM				    	( uint8_t ) ( 0x54u )
