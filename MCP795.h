@@ -5,6 +5,117 @@
  *      Author: ziga.miklosic
  */
 
+#ifndef ACCESSORIES_RTC_H_
+#define ACCESSORIES_RTC_H_
+
+#include "stm32f0xx.h"
+#include "stdbool.h"
+
+#include "SpiDrv.h"
+
+/*******************************************************
+ *
+ * 	RTC is used for timestamp of collected data
+ * 	when storing it on SD Card.
+ *
+ *	RTC type: Microchip MCP795W10
+ *
+ *******************************************************/
+
+
+/*
+ * 	Port/Pins
+ */
+#define RTC_port			( GPIOB )
+
+#define RTC_CS_bp			( 12ul )
+#define RTC_CS_msk			( 0x01u << RTC_CS_bp )
+#define RTC_CS_low()		( RTC_port -> ODR &= ~( RTC_CS_msk ))
+#define RTC_CS_high()		( RTC_port -> ODR |= ( RTC_CS_msk ))
+
+#define RTC_WDT_bp			( 10ul )
+#define RTC_WDT_msk			( 0x01u << RTC_WDT_bp )
+
+#define RTC_IRQ_bp			( 11ul )
+#define RTC_IRQ_msk			( 0x01u << RTC_IRQ_bp )
+
+
+
+/*
+ *		SPI Specifics
+ */
+#define RTC_SPI					( SPI1 )
+
+
+
+
+/*
+ * 	RTC data
+ */
+typedef struct{
+
+	uint16_t	year;	// 1970..2106
+	uint8_t		month;	// 1..12
+	uint8_t		mday;	// 1..31
+	uint8_t		hour;	// 0..23
+	uint8_t		min;	// 0..59
+	uint8_t		sec;	// 0..59
+	uint8_t		wday;	// 0..6 (Sun..Sat)
+}RtcTimeTypeDef;
+
+
+
+
+/*
+ * 	Functions
+ */
+
+// Initialize RTC
+void RtcInit(void);
+
+// Configure SPI for RTC
+void RtcSetupSpi(void);
+
+// Send byte
+uint8_t RtcSendByte(uint8_t);
+
+// Set write enable latch
+void RtcSetWriteEnableLatch(bool);
+
+// Write byte to SRAM
+void RtcWriteByteSram(uint8_t, uint8_t);
+
+// Write block to SRAM
+void RtcWriteBlockSram(uint8_t, uint8_t*, uint8_t);
+
+// Read byte from SRAM
+uint8_t RtcReadByteSram(uint8_t);
+
+// Read block of SRAM
+uint8_t* RtcReadBlockSram(uint8_t, uint8_t);
+
+// Write byte to EEPROM
+void RtcWriteByteEeprom(uint8_t, uint8_t);
+
+// Read byte from EEPROM
+uint8_t RtcReadByteEeprom(uint8_t);
+
+// Read status register
+uint8_t RtcReadStatusReg(void);
+
+// Start/Stop on board oscillator
+void RtcEnableOnBoardOscillator(bool);
+
+// Binary-coded decimal
+uint8_t RtcBcdEncoding(uint8_t);
+
+// Set time
+void RtcSetTime(RtcTimeTypeDef*);
+
+// Get time
+void RtcGetTime(RtcTimeTypeDef*);
+
+
 
 /*
  *		MCP795 RTC Register Addresses
@@ -28,6 +139,12 @@
 // Hours
 #define MCP795_HOURS_addr					( uint8_t )	( 0x03u )
 
+#define MCP795_HOURS_CALCSGN_bp				( uint8_t ) ( 7u )											// Calibration Sign bit
+#define MCP795_HOURS_CALCSGN_msk			( uint8_t ) ( 0x01u << MCP795_HAURS_CALCSGN_bp )
+
+#define MCP795_HOURS_12_24_bp				( uint8_t ) ( 6u )											// 24h or 12h format (0 - 24-hour format, 1 - 12-hour format)
+#define MCP795_HOURS_12_24_msk				( uint8_t ) ( 0x01u << MCP795_HOURS_12_24_bp )
+
 // Day (0-7)
 #define MCP795_DAY_addr						( uint8_t ) ( 0x04u )
 
@@ -38,7 +155,7 @@
 #define MCP795_DAY_VBAT_msk					( uint8_t ) ( 0x01u << MCP795_DAY_OSCON_bp )
 
 #define MCP795_DAY_VBATEN_bp				( uint8_t ) ( 3u )											// Switch to external battery (1 - supply via VBAT, 0 - supply via VCC)
-#define MCP795_DAY_VBATEN_bp				( uint8_t ) ( 0x01u << MCP795_DAY_VBATEN_bp )
+#define MCP795_DAY_VBATEN_msk				( uint8_t ) ( 0x01u << MCP795_DAY_VBATEN_bp )
 
 // Date
 #define MCP795_DATE_addr					( uint8_t ) ( 0x05u )
@@ -172,45 +289,70 @@
 // Month
 #define MCP795_PWRUP_MONTH_addr				( uint8_t ) ( 0x1Fu )
 
+
+// 		Status Register (addressed by SRREAD cmd)
+// ----------------------------------------------
+
+// Write In Protection bit
+#define MCP795_STATUS_REG_WIP_bp			( uint8_t ) ( 0u )
+#define MCP795_STATUS_REG_WIP_msk			( uint8_t ) ( 0x01u << MCP795_STATUS_REG_WIP_bp )
+
+// Write Enable Latch
+#define MCP795_STATUS_REG_WEL_bp			( uint8_t ) ( 1u )
+#define MCP795_STATUS_REG_WEL_msk			( uint8_t ) ( 0x01u << MCP795_STATUS_REG_WEL_bp )
+
+// Block protection
+#define MCP795_STATUS_REG_BP0_bp			( uint8_t ) ( 2u )
+#define MCP795_STATUS_REG_BP0_msk			( uint8_t ) ( 0x01u << MCP795_STATUS_REG_BP0_bp )
+
+#define MCP795_STATUS_REG_BP1_bp			( uint8_t ) ( 3u )
+#define MCP795_STATUS_REG_BP1_msk			( uint8_t ) ( 0x01u << MCP795_STATUS_REG_BP1_bp )
+
+
+
+
 /*
  *		Instruction Set
  */
 
 // Read from EEPROM
-#define MCP795_ISA_EEREAD_cmd				  ( uint8_t ) ( 0x03u )
+#define MCP795_ISA_EEREAD_cmd				( uint8_t ) ( 0x03u )
 
 // Write from EEPROM
 #define MCP795_ISA_EEWRITE_cmd				( uint8_t ) ( 0x02u )
 
 // Reset write enable latch ( disable write operation )
-#define MCP795_ISA_EEWRDI_cmd				  ( uint8_t ) ( 0x04u )
+#define MCP795_ISA_EEWRDI_cmd				( uint8_t ) ( 0x04u )
 
 // Set the write enable latch ( enable write operation )
-#define MCP795_ISA_EEWREN_cmd				  ( uint8_t ) ( 0x06u )
+#define MCP795_ISA_EEWREN_cmd				( uint8_t ) ( 0x06u )
 
 // Read STATUS register
-#define MCP795_ISA_SPREAD_cmd				  ( uint8_t ) ( 0x05u )
+#define MCP795_ISA_SPREAD_cmd				( uint8_t ) ( 0x05u )
 
 // Write STATUS register
 #define MCP795_ISA_SPWRITE_cmd				( uint8_t ) ( 0x01u )
 
 // Read RTCC/SRAM array
-#define MCP795_ISA_READ_cmd					  ( uint8_t ) ( 0x13u )
+#define MCP795_ISA_READ_cmd					( uint8_t ) ( 0x13u )
 
 // Write RTC/SRAM array
-#define MCP795_ISA_WRITE_cmd				  ( uint8_t ) ( 0x12u )
+#define MCP795_ISA_WRITE_cmd				( uint8_t ) ( 0x12u )
 
 // Unlock ID location
-#define MCP795_ISA_UNLOCK_cmd				  ( uint8_t ) ( 0x14u )
+#define MCP795_ISA_UNLOCK_cmd				( uint8_t ) ( 0x14u )
 
 // Write to the ID locations
 #define MCP795_ISA_IDWRITE_cmd				( uint8_t ) ( 0x34u )
 
 // Read the ID locations
-#define MCP795_ISA_IDREAD_cmd				  ( uint8_t ) ( 0x33u )
+#define MCP795_ISA_IDREAD_cmd				( uint8_t ) ( 0x33u )
 
 // Clear watchdog timer
-#define MCP795_ISA_CLRWDT_cmd			  	( uint8_t ) ( 0x44u )
+#define MCP795_ISA_CLRWDT_cmd				( uint8_t ) ( 0x44u )
 
 // Clear RAM location '0'
-#define MCP795_ISA_CLRRAM				    	( uint8_t ) ( 0x54u )
+#define MCP795_ISA_CLRRAM					( uint8_t ) ( 0x54u )
+
+
+#endif /* ACCESSORIES_RTC_H_ */
