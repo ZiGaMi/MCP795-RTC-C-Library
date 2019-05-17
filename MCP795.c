@@ -90,7 +90,6 @@ void RtcWriteByteSram(uint8_t addr, uint8_t val){
 // Write page to SRAM
 void RtcWriteBlockSram(uint8_t addr, uint8_t *buf, uint8_t size){
 
-
 	// Check size
 	// In case of size is larger than page, reduce size to fit page
 	size = ( (( addr & 0x07u ) + size ) > 0x08u  ) ? ( size - ( addr & 0x07u )) : ( size );
@@ -127,12 +126,16 @@ uint8_t* RtcReadBlockSram(uint8_t addr, uint8_t size){
 	// Reception buffer
 	static uint8_t buf[10];
 
+	// Check size
+	// In case of size is larger than page, reduce size to fit page
+	size = ( (( addr & 0x07u ) + size ) > 0x08u  ) ? ( size - ( addr & 0x07u )) : ( size );
+
 	SPI_SS_low();
 	RtcSendByte( MCP795_ISA_READ_cmd );
 	RtcSendByte( addr & 0xffu );
 
 	for ( uint8_t i = 0; i < size; i++ ){
-		buf[i] = ( uint8_t ) ( RtcSendByte(i+1) );
+		buf[i] = ( uint8_t ) ( RtcSendByte( 0x00u ) );
 	}
 
 	SPI_SS_high();
@@ -190,7 +193,7 @@ void RtcEnableOnBoardOscillator(bool state){
 	}
 }
 
-// Binary-coded decimal
+// Binary-coded decimal encoding
 uint8_t RtcBcdEncoding(uint8_t val){
 
 	if ( val > 10 ){
@@ -199,9 +202,13 @@ uint8_t RtcBcdEncoding(uint8_t val){
 	return val;
 }
 
-// Set time
-// NOTE: don't forget leap years
+// Binary-coded decimal decoding
+uint8_t RtcBcdDecoding(uint8_t val){
+	return ( uint8_t ) (((( val >> 4u ) & 0x0fu ) * 10u ) + ( val & 0x0fu ));
+}
 
+
+// Set time
 // ERRATA: Write month in separate write session as this is chips bug!!!
 void RtcSetTime(RtcTimeTypeDef *T){
 
@@ -215,7 +222,7 @@ void RtcSetTime(RtcTimeTypeDef *T){
 							T -> wday,
 							RtcBcdEncoding( T -> mday ),
 							RtcBcdEncoding( T -> month ),
-							RtcBcdEncoding( T -> year )
+							RtcBcdEncoding( T -> year - RTC_PRESET_YEAR )
 						};
 
 	// Set time registers
@@ -241,7 +248,18 @@ void RtcSetTime(RtcTimeTypeDef *T){
 // Get time
 void RtcGetTime(RtcTimeTypeDef *T){
 
-	// multiple bytes read...
+	uint8_t *buf;
 
+	// Read current time
+	buf = RtcReadBlockSram(MCP795_SECONDS_addr, 7u);
+
+	// Set current time
+	T -> sec 	= RtcBcdDecoding( *buf++ );
+	T -> min 	= RtcBcdDecoding( *buf++ );
+	T -> hour 	= RtcBcdDecoding( *buf++ );
+	T -> wday	= (( *buf++ ) & 0x07u );
+	T -> mday	= RtcBcdDecoding( *buf++ );
+	T -> month 	= RtcBcdDecoding( *buf++ );
+	T -> year 	= RtcBcdDecoding( *buf++ ) + RTC_PRESET_YEAR;
 }
 
