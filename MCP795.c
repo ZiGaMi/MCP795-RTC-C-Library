@@ -9,29 +9,44 @@
 
 
 // Initialize RTC
-void RtcInit(){
+void RtcInit(RtcTimeTypeDef *time){
 
-	// TODO:
+	// Enable oscilator
+	RtcEnableOnBoardOscillator(true);
 
+	// Read current day (that day content will not be erased)
+	uint8_t wday = RtcReadByteSram(MCP795_DAY_addr);
+
+	// Enable external battery
+	if (( wday & MCP795_DAY_VBATEN_msk ) != MCP795_DAY_VBATEN_msk ){
+		RtcWriteByteSram(MCP795_DAY_addr, ( MCP795_DAY_VBATEN_msk | ( wday & MCP795_DAY_VAL_msk )));
+	}
 }
 
 
 // Configure SPI for RTC
 void RtcSetupSpi(){
 
-	// RTC SPI specifics
-	// 8 - bit mode
-	// CPOL = 0 (low inactive)
-	// CPHA = 0 (leading edge)
-	// fPCLK / 32 = 1,5MHz
-	// FIFO reception threshold (8-bit)
-
 	// Wait until communication is done
 	while (( RTC_SPI -> SR & SPI_SR_BSY ) == SPI_SR_BSY );
 
-	// Change SPI settings
-	RTC_SPI -> CR1 = ( SPI_CR1_MSTR | SPI_CR1_BR_2 | SPI_CR1_SPE );
-	RTC_SPI -> CR2 = ( SPI_CR2_DS_0 | SPI_CR2_DS_1 | SPI_CR2_DS_2 | SPI_CR2_SSOE | SPI_CR2_FRXTH );
+	// Master configuration
+	// fPCLK/8 = 1 MHz
+	// CPHA=0, CPOL=0
+	// Software driven SS
+	RTC_SPI -> CR1 = 0u;
+	RTC_SPI -> CR1 |= ( SPI_CR1_BR_1 | SPI_CR1_MSTR );
+
+	// NOTE: This configuration is suitable for RTC device.
+	// SD Card SPI Mode 0
+	// Data size -> 8 bit
+	// SS output enable
+	RTC_SPI -> CR2 = 0;
+	RTC_SPI -> CR2 |= ( SPI_CR2_SSOE );
+
+	// Enable SPI
+	RTC_SPI -> CR1 |= SPI_CR1_SPE;
+
 }
 
 
@@ -48,14 +63,10 @@ uint8_t RtcReadStatusReg(){
 
 	uint8_t status;
 
-	//RTC_CS_low();
-	SPI_SS_low();
-
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_SPREAD_cmd );
 	status = RtcSendByte( 0x00u );
-
-	//RTC_CS_high();
-	SPI_SS_high();
+	RTC_CS_high();
 
 	return status;
 }
@@ -66,25 +77,25 @@ uint8_t RtcReadStatusReg(){
 // NOTE: Write Enable Latch is only for non-volatile memory(EEPROM, Unique ID and STATUS register)
 void RtcSetWriteEnableLatch(bool state){
 
-	SPI_SS_low();
+	RTC_CS_low();
 	if ( state ){
 		RtcSendByte( MCP795_ISA_EEWREN_cmd );
 	}
 	else{
 		RtcSendByte( MCP795_ISA_EEWRDI_cmd );
 	}
-	SPI_SS_high();
+	RTC_CS_high();
 }
 
 
 // Write byte to SRAM
 void RtcWriteByteSram(uint8_t addr, uint8_t val){
 
-	SPI_SS_low();
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_WRITE_cmd );
 	RtcSendByte( addr & 0xffu );
 	RtcSendByte( val & 0xffu );
-	SPI_SS_high();
+	RTC_CS_high();
 }
 
 // Write page to SRAM
@@ -94,7 +105,7 @@ void RtcWriteBlockSram(uint8_t addr, uint8_t *buf, uint8_t size){
 	// In case of size is larger than page, reduce size to fit page
 	size = ( (( addr & 0x07u ) + size ) > 0x08u  ) ? ( size - ( addr & 0x07u )) : ( size );
 
-	SPI_SS_low();
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_WRITE_cmd );
 	RtcSendByte( addr & 0xffu );
 
@@ -102,7 +113,7 @@ void RtcWriteBlockSram(uint8_t addr, uint8_t *buf, uint8_t size){
 		RtcSendByte(( *buf++ ) & 0xffu );
 	}
 
-	SPI_SS_high();
+	RTC_CS_high();
 }
 
 
@@ -111,11 +122,11 @@ uint8_t RtcReadByteSram(uint8_t addr){
 
 	uint8_t data;
 
-	SPI_SS_low();
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_READ_cmd );
 	RtcSendByte( addr & 0xffu );
 	data = RtcSendByte( 0x00u );
-	SPI_SS_high();
+	RTC_CS_high();
 
 	return ( uint8_t ) ( data );
 }
@@ -130,7 +141,7 @@ uint8_t* RtcReadBlockSram(uint8_t addr, uint8_t size){
 	// In case of size is larger than page, reduce size to fit page
 	size = ( (( addr & 0x07u ) + size ) > 0x08u  ) ? ( size - ( addr & 0x07u )) : ( size );
 
-	SPI_SS_low();
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_READ_cmd );
 	RtcSendByte( addr & 0xffu );
 
@@ -138,7 +149,7 @@ uint8_t* RtcReadBlockSram(uint8_t addr, uint8_t size){
 		buf[i] = ( uint8_t ) ( RtcSendByte( 0x00u ) );
 	}
 
-	SPI_SS_high();
+	RTC_CS_high();
 
 	return (uint8_t*) ( &buf );
 }
@@ -152,11 +163,11 @@ void RtcWriteByteEeprom(uint8_t addr, uint8_t val){
 		RtcSetWriteEnableLatch( true );
 	}
 
-	SPI_SS_low();
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_EEWRDI_cmd );
 	RtcSendByte( addr & 0xffu );
 	RtcSendByte( val & 0xffu );
-	SPI_SS_high();
+	RTC_CS_high();
 }
 
 
@@ -165,11 +176,11 @@ uint8_t RtcReadByteEeprom(uint8_t addr){
 
 	uint8_t data;
 
-	SPI_SS_low();
+	RTC_CS_low();
 	RtcSendByte( MCP795_ISA_EEREAD_cmd );
 	RtcSendByte( addr & 0xffu );
 	data = RtcSendByte( 0x00u );
-	SPI_SS_high();
+	RTC_CS_high();
 
 	return ( uint8_t ) ( data );
 }
@@ -181,10 +192,16 @@ void RtcEnableOnBoardOscillator(bool state){
 	if ( state ){
 
 		// Enable external oscillator input
-		RtcWriteByteSram(MCP795_CONTROL_REG_addr, MCP795_CONTROL_REG_EXTOSC_msk);
+		RtcWriteByteSram(MCP795_CONTROL_REG_addr, MCP795_CONTROL_REG_SQWE_msk );
+
+		// Read seconds register that enabling OSC bit doesn't clear up seconds register
+		uint8_t sec = RtcReadByteSram(MCP795_SECONDS_addr);
 
 		// Start oscillator
-		RtcWriteByteSram(MCP795_SECONDS_addr, MCP795_SECONDS_START_OSC_msk);
+		RtcWriteByteSram(MCP795_SECONDS_addr, MCP795_SECONDS_START_OSC_msk | ( sec & ~(MCP795_SECONDS_START_OSC_msk )));
+
+		// Wait oscilator to start
+		delay_ms(10);
 	}
 	else{
 
@@ -215,13 +232,20 @@ void RtcSetTime(RtcTimeTypeDef *T){
 	// Stop oscillator
 	RtcEnableOnBoardOscillator( false );
 
+	// Read time registers
+	uint8_t *time_reg = RtcReadBlockSram(MCP795_SECONDS_addr, 7u);
+	uint8_t sec_reg 	= time_reg[0];
+	uint8_t hour_reg 	= time_reg[2];
+	uint8_t wday_reg 	= time_reg[3];
+	uint8_t month_reg	= time_reg[5];
+
 	// Encode time
-	uint8_t buf[10] = 	{ 	RtcBcdEncoding( T -> sec ),
+	uint8_t buf[10] = 	{ 	RtcBcdEncoding( T -> sec ) | ( sec_reg & MCP795_SECONDS_START_OSC_msk ),
 							RtcBcdEncoding( T -> min ),
-							( RtcBcdEncoding( T -> hour ) & ~( MCP795_HOURS_12_24_msk )),	// 24-hour format
-							T -> wday,
+							(( RtcBcdEncoding( T -> hour ) & MCP795_HOURS_VAL_msk ) | ( hour_reg & MCP795_HOURS_CTRL_msk )),
+							(( T -> wday & MCP795_DAY_VAL_msk ) | ( wday_reg & MCP795_DAY_CTRL_msk )),
 							RtcBcdEncoding( T -> mday ),
-							RtcBcdEncoding( T -> month ),
+							(( RtcBcdEncoding( T -> month ) & MCP795_MONTH_VAL_msk ) | ( month_reg & MCP795_MONTH_LP_msk )),
 							RtcBcdEncoding( T -> year - RTC_PRESET_YEAR )
 						};
 
@@ -242,6 +266,7 @@ void RtcSetTime(RtcTimeTypeDef *T){
 
 	// Start oscillator
 	RtcEnableOnBoardOscillator( true );
+	delay_ms(10);
 }
 
 
@@ -254,12 +279,23 @@ void RtcGetTime(RtcTimeTypeDef *T){
 	buf = RtcReadBlockSram(MCP795_SECONDS_addr, 7u);
 
 	// Set current time
-	T -> sec 	= RtcBcdDecoding( *buf++ );
+	T -> sec 	= RtcBcdDecoding( *buf++ & MCP795_SECONDS_VAL_msk);		// Ignore ST bit
 	T -> min 	= RtcBcdDecoding( *buf++ );
-	T -> hour 	= RtcBcdDecoding( *buf++ );
-	T -> wday	= (( *buf++ ) & 0x07u );
+	T -> hour 	= RtcBcdDecoding( *buf++ & MCP795_HOURS_VAL_msk );
+	T -> wday	= (( *buf++ ) & MCP795_DAY_VAL_msk );
 	T -> mday	= RtcBcdDecoding( *buf++ );
-	T -> month 	= RtcBcdDecoding( *buf++ );
+	T -> month 	= RtcBcdDecoding( *buf++ & MCP795_MONTH_VAL_msk );
 	T -> year 	= RtcBcdDecoding( *buf++ ) + RTC_PRESET_YEAR;
 }
 
+
+// Parse time packet config
+void RtcParsePCSetTimeCommand(uint8_t *cmd, RtcTimeTypeDef *T){
+	T -> sec	= ( *cmd++ );
+	T -> min	= ( *cmd++ );
+	T -> hour	= ( *cmd++ );
+	T -> wday	= ( *cmd++ );
+	T -> mday	= ( *cmd++ );
+	T -> month	= ( *cmd++ );
+	T -> year	= ( *cmd++ + RTC_PRESET_YEAR );
+}
