@@ -8,10 +8,11 @@
 #ifndef ACCESSORIES_RTC_H_
 #define ACCESSORIES_RTC_H_
 
-#include "stm32f0xx.h"
+#include "stm32l0xx.h"
 #include "stdbool.h"
 
-#include "SpiDrv.h"
+#include "Drivers/SpiDrv.h"
+#include "Drivers/ClockDrv.h"
 
 /*******************************************************
  *
@@ -26,16 +27,12 @@
 /*
  * 	Port/Pins
  */
-#define RTC_port			( GPIOB )
 
-#define RTC_CS_bp			( 12ul )
-#define RTC_CS_msk			( 0x01u << RTC_CS_bp )
-#define RTC_CS_low()		( RTC_port -> ODR &= ~( RTC_CS_msk ))
-#define RTC_CS_high()		( RTC_port -> ODR |= ( RTC_CS_msk ))
-
+// Watchdog timer
 #define RTC_WDT_bp			( 10ul )
 #define RTC_WDT_msk			( 0x01u << RTC_WDT_bp )
 
+// Alarm interrupt
 #define RTC_IRQ_bp			( 11ul )
 #define RTC_IRQ_msk			( 0x01u << RTC_IRQ_bp )
 
@@ -44,7 +41,7 @@
 /*
  *		SPI Specifics
  */
-#define RTC_SPI					( SPI1 )
+#define RTC_SPI					( SPI2 )
 
 
 
@@ -64,6 +61,7 @@ typedef struct{
 }RtcTimeTypeDef;
 
 
+#define RTC_PRESET_YEAR 		( uint16_t ) ( 2019u )
 
 
 /*
@@ -71,7 +69,7 @@ typedef struct{
  */
 
 // Initialize RTC
-void RtcInit(void);
+void RtcInit(RtcTimeTypeDef*);
 
 // Configure SPI for RTC
 void RtcSetupSpi(void);
@@ -106,8 +104,11 @@ uint8_t RtcReadStatusReg(void);
 // Start/Stop on board oscillator
 void RtcEnableOnBoardOscillator(bool);
 
-// Binary-coded decimal
+// Binary-coded decimal encoding
 uint8_t RtcBcdEncoding(uint8_t);
+
+// Binary-coded decimal decoding
+uint8_t RtcBcdDecoding(uint8_t);
 
 // Set time
 void RtcSetTime(RtcTimeTypeDef*);
@@ -115,6 +116,14 @@ void RtcSetTime(RtcTimeTypeDef*);
 // Get time
 void RtcGetTime(RtcTimeTypeDef*);
 
+// Get power-up time
+void RtcGetPowerUpTime(RtcTimeTypeDef*);
+
+// Get power-down time
+void RtcGetPowerDownTime(RtcTimeTypeDef*);
+
+// Parse time packet config
+void RtcParsePCSetTimeCommand(uint8_t*, RtcTimeTypeDef*);
 
 
 /*
@@ -129,6 +138,8 @@ void RtcGetTime(RtcTimeTypeDef*);
 
 // Seconds
 #define MCP795_SECONDS_addr					( uint8_t )	( 0x01u )
+#define MCP795_SECONDS_VAL_msk				( uint8_t ) ( 0x7Fu )
+#define MCP795_SECONDS_CTRL_msk				( uint8_t ) ( 0x80u )
 
 #define MCP795_SECONDS_START_OSC_bp			( uint8_t )	( 7u )											// Start/Stop oscillator options. (1 - start, 0 - stop)
 #define MCP795_SECONDS_START_OSC_msk		( uint8_t ) ( 0x01u << MCP795_SECONDS_START_OSC_bp )
@@ -138,6 +149,8 @@ void RtcGetTime(RtcTimeTypeDef*);
 
 // Hours
 #define MCP795_HOURS_addr					( uint8_t )	( 0x03u )
+#define MCP795_HOURS_VAL_msk				( uint8_t ) ( 0x1Fu )
+#define MCP795_HOURS_CTRL_msk				( uint8_t ) ( 0xE0u )
 
 #define MCP795_HOURS_CALCSGN_bp				( uint8_t ) ( 7u )											// Calibration Sign bit
 #define MCP795_HOURS_CALCSGN_msk			( uint8_t ) ( 0x01u << MCP795_HAURS_CALCSGN_bp )
@@ -147,6 +160,8 @@ void RtcGetTime(RtcTimeTypeDef*);
 
 // Day (0-7)
 #define MCP795_DAY_addr						( uint8_t ) ( 0x04u )
+#define MCP795_DAY_VAL_msk					( uint8_t ) ( 0x07u )
+#define MCP795_DAY_CTRL_msk					( uint8_t ) ( 0x38u )
 
 #define MCP795_DAY_OSCON_bp					( uint8_t )	( 5u )											// Oscillator ON bit (set/clear by HW)
 #define MCP795_DAY_OSCON_msk				( uint8_t ) ( 0x01u << MCP795_DAY_OSCON_bp )
@@ -162,6 +177,7 @@ void RtcGetTime(RtcTimeTypeDef*);
 
 // Month
 #define MCP795_MONTH_addr					( uint8_t ) ( 0x06u )
+#define MCP795_MONTH_VAL_msk				( uint8_t )	( 0x1Fu )
 
 #define MCP795_MONTH_LP_bp					( uint8_t ) ( 5u )											// Leap year ( set during leap year )
 #define MCP795_MONTH_LP_msk					( uint8_t ) ( 0x01u << MCP795_MONTH_LP_bp )
