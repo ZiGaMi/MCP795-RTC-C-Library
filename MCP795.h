@@ -60,8 +60,12 @@ typedef struct{
 	uint8_t		wday;	// 0..6 (Sun..Sat)
 }RtcTimeTypeDef;
 
-
+// RTC hardcoded presnet year
 #define RTC_PRESET_YEAR 		( uint16_t ) ( 2019u )
+
+// Calibration sign
+#define RTC_CAL_SIGN_POS		( uint8_t ) ( 0x00u )
+#define RTC_CAL_SIGN_NEG		( uint8_t ) ( 0x01u )
 
 
 /*
@@ -125,6 +129,16 @@ void RtcGetPowerDownTime(RtcTimeTypeDef*);
 // Parse time packet config
 void RtcParsePCSetTimeCommand(uint8_t*, RtcTimeTypeDef*);
 
+// Set calibration factor
+void RtcSetCalibrationFactor(uint8_t, uint8_t);
+
+// Get calibration factor
+uint8_t RtcGetCalibrationFactor(void);
+
+// Get calibration factor sign
+uint8_t RtcGetCalibrationFactorSign(void);
+
+
 
 /*
  *		MCP795 RTC Register Addresses
@@ -149,11 +163,11 @@ void RtcParsePCSetTimeCommand(uint8_t*, RtcTimeTypeDef*);
 
 // Hours
 #define MCP795_HOURS_addr					( uint8_t )	( 0x03u )
-#define MCP795_HOURS_VAL_msk				( uint8_t ) ( 0x1Fu )
+#define MCP795_HOURS_VAL_msk				( uint8_t ) ( 0x3Fu )
 #define MCP795_HOURS_CTRL_msk				( uint8_t ) ( 0xE0u )
 
 #define MCP795_HOURS_CALCSGN_bp				( uint8_t ) ( 7u )											// Calibration Sign bit
-#define MCP795_HOURS_CALCSGN_msk			( uint8_t ) ( 0x01u << MCP795_HAURS_CALCSGN_bp )
+#define MCP795_HOURS_CALCSGN_msk			( uint8_t ) ( 0x01u << MCP795_HOURS_CALCSGN_bp )
 
 #define MCP795_HOURS_12_24_bp				( uint8_t ) ( 6u )											// 24h or 12h format (0 - 24-hour format, 1 - 12-hour format)
 #define MCP795_HOURS_12_24_msk				( uint8_t ) ( 0x01u << MCP795_HOURS_12_24_bp )
@@ -192,16 +206,24 @@ void RtcParsePCSetTimeCommand(uint8_t*, RtcTimeTypeDef*);
 #define MCP795_CONTROL_REG_OUT_msk			( uint8_t ) ( MCP795_CONTROL_REG_OUT_bp )
 
 #define MCP795_CONTROL_REG_SQWE_bp			( uint8_t ) ( 6u )											// Squarewave enable bit
-#define MCP795_CONTROL_REG_SQWE_msk			( uint8_t ) ( MCP795_CONTROL_REG_SQWE_bp )
+#define MCP795_CONTROL_REG_SQWE_msk			( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_SQWE_bp )
 
-#define MCP795_CONTROL_REG_ALM_bp			( uint8_t ) ( 4u )											// Alarm Configuration bits
-#define MCP795_CONTROL_REG_ALM_msk			( uint8_t ) ( 0x03u << MCP795_CONTROL_REG_ALM_bp )
+#define MCP795_CONTROL_REG_ALM_0_bp			( uint8_t ) ( 4u )											// Alarm Configuration bits
+#define MCP795_CONTROL_REG_ALM_0_msk		( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_ALM_0_bp )
+#define MCP795_CONTROL_REG_ALM_1_bp			( uint8_t ) ( 5u )
+#define MCP795_CONTROL_REG_ALM_1_msk		( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_ALM_1_bp )
+#define MCP795_CONTROL_REG_ALM_msk			( uint8_t ) ( 0x03u << MCP795_CONTROL_REG_ALM_0_bp )
 
 #define MCP795_CONTROL_REG_EXTOSC_bp		( uint8_t ) ( 3u )											// External Oscillator Input bit
 #define MCP795_CONTROL_REG_EXTOSC_msk		( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_EXTOSC_bp )
 
-#define MCP795_CONTROL_REG_RS_bp			( uint8_t ) ( 0u )											// Calibration Mode bits
-#define MCP795_CONTROL_REG_RS_msk			( uint8_t ) ( 0x03u << MCP795_CONTROL_REG_RS_bp )
+#define MCP795_CONTROL_REG_RS_0_bp			( uint8_t ) ( 0u )											// Calibration Mode bits
+#define MCP795_CONTROL_REG_RS_0_msk			( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_RS_0_bp )
+#define MCP795_CONTROL_REG_RS_1_bp			( uint8_t ) ( 1u )
+#define MCP795_CONTROL_REG_RS_1_msk			( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_RS_1_bp )
+#define MCP795_CONTROL_REG_RS_2_bp			( uint8_t ) ( 2u )
+#define MCP795_CONTROL_REG_RS_2_msk			( uint8_t ) ( 0x01u << MCP795_CONTROL_REG_RS_2_bp )
+#define MCP795_CONTROL_REG_RS_msk			( uint8_t ) ( 0x03u << MCP795_CONTROL_REG_RS_0_bp )
 
 // Calibration
 #define MCP795_CALIBRATION_addr				( uint8_t ) ( 0x09u )
@@ -228,10 +250,16 @@ void RtcParsePCSetTimeCommand(uint8_t*, RtcTimeTypeDef*);
 #define MCP795_ALARM0_DAY_addr				( uint8_t ) ( 0x0Fu )
 
 #define MCP795_ALARM0_DAY_ALM0PIN_bp		( uint8_t ) ( 7u )											// Alarm 0 Output Pin Configuration bit
+
 #define MCP795_ALARM0_DAY_ALM0PIN_msk		( uint8_t ) ( 0x01u << MCP795_ALARM0_DAY_ALM0PIN_bp )
 
-#define MCP795_ALARM0_DAY_ALM0C_bp			( uint8_t ) ( 4u )											// Alarm 0 Configuration bits
-#define MCP795_ALARM0_DAY_ALM0C_msk			( uint8_t ) ( 0x07u << MCP795_ALARM0_DAY_ALM0C_bp )
+#define MCP795_ALARM0_DAY_ALM0C_0_bp		( uint8_t ) ( 4u )											// Alarm 0 Configuration bits
+#define MCP795_ALARM0_DAY_ALMOC_0_msk		( uint8_t ) ( 0x01u << MCP795_ALARM0_DAY_ALM0C_0_bp )
+#define MCP795_ALARM0_DAY_ALM0C_1_bp		( uint8_t ) ( 5u )
+#define MCP795_ALARM0_DAY_ALMOC_1_msk		( uint8_t ) ( 0x01u << MCP795_ALARM0_DAY_ALM0C_1_bp )
+#define MCP795_ALARM0_DAY_ALM0C_2_bp		( uint8_t ) ( 6u )
+#define MCP795_ALARM0_DAY_ALMOC_2_msk		( uint8_t ) ( 0x01u << MCP795_ALARM0_DAY_ALM0C_2_bp )
+#define MCP795_ALARM0_DAY_ALM0C_msk			( uint8_t ) ( 0x07u << MCP795_ALARM0_DAY_ALM0C_0_bp )
 
 #define MCP795_ALARM0_DAY_ALM0IF_bp			( uint8_t ) ( 3u )											// Alarm 0 Interrupt Flag (set by HW)
 #define MCP795_ALARM0_DAY_ALM0IF_msk		( uint8_t ) ( 0x01u << MCP795_ALARM0_DAY_ALM0IF_bp )
