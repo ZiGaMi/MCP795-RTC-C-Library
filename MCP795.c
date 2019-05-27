@@ -11,7 +11,7 @@
 // Initialize RTC
 void RtcInit(RtcTimeTypeDef *time){
 
-	// Enable oscilator
+	// Enable oscillator
 	RtcEnableOnBoardOscillator(true);
 
 	// Read current day (that day content will not be erased)
@@ -21,6 +21,23 @@ void RtcInit(RtcTimeTypeDef *time){
 	if (( wday & MCP795_DAY_VBATEN_msk ) != MCP795_DAY_VBATEN_msk ){
 		RtcWriteByteSram(MCP795_DAY_addr, ( MCP795_DAY_VBATEN_msk | ( wday & MCP795_DAY_VAL_msk )));
 	}
+
+	// Read control register
+	uint8_t ctrl_reg = RtcReadByteSram(MCP795_CONTROL_REG_addr);
+
+	// Enable CLKOUT and enable CAL output function
+	ctrl_reg |= ( MCP795_CONTROL_REG_SQWE_msk | MCP795_CONTROL_REG_RS_2_msk );
+
+	// Enable alarm 0
+	ctrl_reg |= ( MCP795_CONTROL_REG_ALM_0_msk );
+
+	// Set up control register
+	RtcWriteByteSram(MCP795_CONTROL_REG_addr, ctrl_reg);
+
+	// Alarm 0 on hours match
+	//uint8_t alarm_0_day_reg = ( MCP795_ALARM0_DAY_ALMOC_1_msk );
+
+
 }
 
 
@@ -191,16 +208,25 @@ void RtcEnableOnBoardOscillator(bool state){
 
 	if ( state ){
 
+		// Read control register
+		uint8_t ctrl_reg = RtcReadByteSram(MCP795_CONTROL_REG_addr);
+
 		// Enable external oscillator input
-		RtcWriteByteSram(MCP795_CONTROL_REG_addr, MCP795_CONTROL_REG_SQWE_msk );
+		ctrl_reg |= ( MCP795_CONTROL_REG_SQWE_msk );
+
+		// Set control register
+		RtcWriteByteSram(MCP795_CONTROL_REG_addr, ctrl_reg );
 
 		// Read seconds register that enabling OSC bit doesn't clear up seconds register
-		uint8_t sec = RtcReadByteSram(MCP795_SECONDS_addr);
+		uint8_t sec_reg = RtcReadByteSram(MCP795_SECONDS_addr);
 
 		// Start oscillator
-		RtcWriteByteSram(MCP795_SECONDS_addr, MCP795_SECONDS_START_OSC_msk | ( sec & ~(MCP795_SECONDS_START_OSC_msk )));
+		sec_reg |= ( MCP795_SECONDS_START_OSC_msk );
 
-		// Wait oscilator to start
+		// Start oscillator
+		RtcWriteByteSram(MCP795_SECONDS_addr, sec_reg);
+
+		// Wait oscillator to start
 		delay_ms(10);
 	}
 	else{
@@ -213,7 +239,7 @@ void RtcEnableOnBoardOscillator(bool state){
 // Binary-coded decimal encoding
 uint8_t RtcBcdEncoding(uint8_t val){
 
-	if ( val > 10 ){
+	if ( val >= 10 ){
 		val = ((( val / 10 ) << 4u ) & 0xf0u ) | (( val % 10 ) & 0x0fu );
 	}
 	return val;
@@ -238,6 +264,9 @@ void RtcSetTime(RtcTimeTypeDef *T){
 	uint8_t hour_reg 	= time_reg[2];
 	uint8_t wday_reg 	= time_reg[3];
 	uint8_t month_reg	= time_reg[5];
+
+	// 24 h format
+	hour_reg &= ~( MCP795_HOURS_12_24_msk );
 
 	// Encode time
 	uint8_t buf[10] = 	{ 	RtcBcdEncoding( T -> sec ) | ( sec_reg & MCP795_SECONDS_START_OSC_msk ),
@@ -299,3 +328,45 @@ void RtcParsePCSetTimeCommand(uint8_t *cmd, RtcTimeTypeDef *T){
 	T -> month	= ( *cmd++ );
 	T -> year	= ( *cmd++ + RTC_PRESET_YEAR );
 }
+
+
+// Set calibration factor
+void RtcSetCalibrationFactor(uint8_t sign, uint8_t factor){
+
+	// Get hour reg
+	uint8_t hour_reg = RtcReadByteSram(MCP795_HOURS_addr);
+
+	// Positive calibration
+	if ( sign == RTC_CAL_SIGN_POS ){
+
+		// Clear calibration sign
+		hour_reg &= ~( MCP795_HOURS_CALCSGN_msk );
+		RtcWriteByteSram(MCP795_HOURS_addr, hour_reg );
+	}
+
+	// Negative calibration
+	else if ( sign == RTC_CAL_SIGN_NEG ){
+
+		// Set calibration sign
+		hour_reg |= ( MCP795_HOURS_CALCSGN_msk );
+		RtcWriteByteSram(MCP795_HOURS_addr, hour_reg);
+	}
+
+	// Set calibration factor
+	RtcWriteByteSram(MCP795_CALIBRATION_addr, factor);
+
+}
+
+
+// Get calibration factor
+uint8_t RtcGetCalibrationFactor(void){
+	return ( uint8_t ) ( RtcReadByteSram(MCP795_CALIBRATION_addr) );
+}
+
+
+// Get calibration factor sign
+uint8_t RtcGetCalibrationFactorSign(void){
+	uint8_t hour_reg = RtcReadByteSram(MCP795_HOURS_addr);
+	return ( uint8_t ) ((( hour_reg & MCP795_HOURS_CALCSGN_msk ) == MCP795_HOURS_CALCSGN_msk ) ? ( RTC_CAL_SIGN_NEG ) : ( RTC_CAL_SIGN_POS ) );
+}
+
