@@ -13,6 +13,8 @@
 
 #include "Drivers/SpiDrv.h"
 #include "Drivers/ClockDrv.h"
+#include "SystemDefines.h"
+
 
 /*******************************************************
  *
@@ -27,6 +29,9 @@
 /*
  * 	Port/Pins
  */
+
+// RTC port
+#define RTC_port			( GPIOB )
 
 // Watchdog timer
 #define RTC_WDT_bp			( 10ul )
@@ -60,12 +65,22 @@ typedef struct{
 	uint8_t		wday;	// 0..6 (Sun..Sat)
 }RtcTimeTypeDef;
 
-// RTC hardcoded presnet year
-#define RTC_PRESET_YEAR 		( uint16_t ) ( 2019u )
+// RTC hardcoded present year
+#define RTC_PRESET_YEAR 						( uint16_t ) ( 2019u )
 
 // Calibration sign
-#define RTC_CAL_SIGN_POS		( uint8_t ) ( 0x00u )
-#define RTC_CAL_SIGN_NEG		( uint8_t ) ( 0x01u )
+#define RTC_CAL_SIGN_POS						( uint8_t ) ( 0x00u )
+#define RTC_CAL_SIGN_NEG						( uint8_t ) ( 0x01u )
+
+// Calibration factor store address (EEPROM)
+#define RTC_CAL_FACTOR_STATUS_STORE_addr		( uint8_t ) ( 0x10u )
+#define RTC_CAL_FACTOR_VAL_STORE_addr			( uint8_t ) ( 0x11u )
+#define RTC_CAL_FACTOR_SIGN_STORE_addr			( uint8_t ) ( 0x12u )
+
+// Calibration factor store status
+#define RTC_CAL_FACTOR_STORE_STATUS_none		( uint8_t )	( 0x90u )
+#define RTC_CAL_FACTOR_STORE_STATUS_calibrated	( uint8_t ) ( 0xCEu )
+
 
 
 /*
@@ -99,8 +114,14 @@ uint8_t* RtcReadBlockSram(uint8_t, uint8_t);
 // Write byte to EEPROM
 void RtcWriteByteEeprom(uint8_t, uint8_t);
 
+// Write block to EEPROM
+void RtcWriteBlockEeprom(uint8_t, uint8_t*, uint8_t);
+
 // Read byte from EEPROM
 uint8_t RtcReadByteEeprom(uint8_t);
+
+// Read block from EEPROm
+uint8_t* RtcReadBlockEeprom(uint8_t, uint8_t);
 
 // Read status register
 uint8_t RtcReadStatusReg(void);
@@ -138,6 +159,37 @@ uint8_t RtcGetCalibrationFactor(void);
 // Get calibration factor sign
 uint8_t RtcGetCalibrationFactorSign(void);
 
+// Set alarm 0
+// NOTE: This alarm will be set to match hours
+void RtcSetAlarm0(bool, uint8_t);
+
+// Set/Get alarm 0 status flag
+void RtcSetAlarm0StatusFlag(bool);
+bool RtcGetAlarm0StatusFlag(void);
+
+// Clear IRQ flag
+void RtcClearAlarm0IrqFlag(void);
+
+// Set WatchDog timer
+void RtcSetWdt(bool);
+
+// Reset WDT
+// NOTE: For reseting internal logic of WDT
+// special command is present
+void RtcResetWdt(void);
+
+// Set/Get WDT status flag
+void RtcSetWdtStatusFlag(bool);
+bool RtcGetWdtStatusFlag(void);
+
+// Clear WDT flag
+void RtcClearWdtIrqFlag(void);
+
+// Store calibration factor
+void RtcStoreCalibrationFactor(uint8_t, uint8_t);
+
+// Read calibration factor
+uint8_t* RtcReadCalibrationFactor(void);
 
 
 /*
@@ -171,6 +223,7 @@ uint8_t RtcGetCalibrationFactorSign(void);
 
 #define MCP795_HOURS_12_24_bp				( uint8_t ) ( 6u )											// 24h or 12h format (0 - 24-hour format, 1 - 12-hour format)
 #define MCP795_HOURS_12_24_msk				( uint8_t ) ( 0x01u << MCP795_HOURS_12_24_bp )
+
 
 // Day (0-7)
 #define MCP795_DAY_addr						( uint8_t ) ( 0x04u )
@@ -231,8 +284,29 @@ uint8_t RtcGetCalibrationFactorSign(void);
 // Watchdog
 #define MCP795_WATCHDOG_addr				( uint8_t ) ( 0x0Au )
 
+#define MCP795_WATCHDOG_WDTEN_bp			( uint8_t ) ( 7u )											// Enable WDT
+#define MCP795_WATCHDOG_WDTEN_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WDTEN_bp )
+
+#define MCP795_WATCHDOG_WDTIF_bp			( uint8_t ) ( 6u )											// WDT interrupt flag
+#define MCP795_WATCHDOG_WDTIF_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WDTIF_bp )
+
+#define MCP795_WATCHDOG_WDDEL_bp			( uint8_t ) ( 5u )											// WDT delay bit
+#define MCP795_WATCHDOG_WDDEL_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WDDEL_bp )
+
+#define MCP795_WATCHDOG_WDTPLS_bp			( uint8_t ) ( 4u )											// WDT pulse width
+#define MCP795_WATCHDOG_WDTPLS_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WDTPLS_bp )
+
+#define MCP795_WATCHDOG_WD_msk				( uint8_t ) ( 0x07u )										// WDT Configurations
+#define MCP795_WATCHDOG_WD_2_bp				( uint8_t ) ( 2u )
+#define MCP795_WATCHDOG_WD_2_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WD_2_bp )
+#define MCP795_WATCHDOG_WD_1_bp				( uint8_t ) ( 1u )
+#define MCP795_WATCHDOG_WD_1_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WD_1_bp )
+#define MCP795_WATCHDOG_WD_0_bp				( uint8_t ) ( 0u )
+#define MCP795_WATCHDOG_WD_0_msk			( uint8_t ) ( 0x01u << MCP795_WATCHDOG_WD_0_bp )
+
 // Event detect
 #define MCP795_EVENT_DETECT_addr			( uint8_t ) ( 0x0Bu )
+
 
 // 		Alarm 0 Registers
 // ----------------------------------------------
