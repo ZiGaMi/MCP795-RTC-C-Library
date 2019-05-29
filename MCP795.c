@@ -8,8 +8,48 @@
 #include "RTC.h"
 
 
-// Initialize RTC
+// Initialize RTC specific drivers
 void RtcInit(RtcTimeTypeDef *time){
+
+
+	/*
+	 * 	Setup SPI for RTC
+	 */
+	SpiAccessInit();
+
+
+	/*
+	 * 		Setup IRQ and WDT line
+	 */
+
+	// Enable clock for GPIOB
+	RCC -> IOPENR |= ( RCC_IOPENR_GPIOBEN );
+
+	// Input mode
+	RTC_port -> MODER &= ~(( 0x03u << ( 2ul * RTC_IRQ_bp )) |
+						   ( 0x03u << ( 2ul * RTC_WDT_bp )));
+
+	// System configure clock
+	RCC -> APB2ENR |= ( RCC_APB2ENR_SYSCFGEN );
+
+	// External interrupt on PB11 and PB10
+	SYSCFG -> EXTICR[2] |= (( 0x01u << ( 4ul * ( RTC_IRQ_bp - 8u ))) |
+							( 0x01u << ( 4ul * ( RTC_WDT_bp - 8u ))));
+
+	// Unmask interrupt
+	EXTI -> IMR |= ( RTC_IRQ_msk | RTC_WDT_msk );
+
+	// Falling edge only
+	EXTI -> FTSR |= ( RTC_IRQ_msk | RTC_WDT_msk );
+
+	// Clear pending interrupt
+	EXTI -> PR |= ( RTC_IRQ_msk | RTC_WDT_msk );
+
+
+
+	/*
+	 * 		RTC Initialization
+	 */
 
 	// Enable oscillator
 	RtcEnableOnBoardOscillator(true);
@@ -22,22 +62,36 @@ void RtcInit(RtcTimeTypeDef *time){
 		RtcWriteByteSram(MCP795_DAY_addr, ( MCP795_DAY_VBATEN_msk | ( wday & MCP795_DAY_VAL_msk )));
 	}
 
-	// Read control register
-	uint8_t ctrl_reg = RtcReadByteSram(MCP795_CONTROL_REG_addr);
-
 	// Enable CLKOUT and enable CAL output function
-	ctrl_reg |= ( MCP795_CONTROL_REG_SQWE_msk | MCP795_CONTROL_REG_RS_2_msk );
-
-	// Enable alarm 0
-	ctrl_reg |= ( MCP795_CONTROL_REG_ALM_0_msk );
+	uint8_t ctrl_reg = ( MCP795_CONTROL_REG_SQWE_msk | MCP795_CONTROL_REG_RS_2_msk );
 
 	// Set up control register
 	RtcWriteByteSram(MCP795_CONTROL_REG_addr, ctrl_reg);
 
-	// Alarm 0 on hours match
-	//uint8_t alarm_0_day_reg = ( MCP795_ALARM0_DAY_ALMOC_1_msk );
+	// Disable event detect
+	RtcWriteByteSram(MCP795_EVENT_DETECT_addr, 0x00u);
 
+	// Read from EEPROM to check if calibration factors are already there
+	uint8_t *cal_factor = RtcReadCalibrationFactor();
 
+	// Device was once calibrated, therefore move calibration factors from EEPROM to CAL registers
+	if ( *cal_factor == RTC_CAL_FACTOR_STORE_STATUS_calibrated ){
+		RtcSetCalibrationFactor( *(cal_factor + 1u), *(cal_factor + 2u));
+	}
+
+	// Device was never calibrated, therefore calibration routine must perform
+	else if ( *cal_factor == RTC_CAL_FACTOR_STORE_STATUS_none ){
+		// TODO:
+	}
+
+	// Enable Alarm 0
+	RtcSetAlarm0(true, DATA_COLLECTOR_START_HOUR);
+
+	// Configure WDT
+	RtcResetWdt();
+
+	// Enable interrupt on alarm 0
+	NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
 
 
@@ -185,8 +239,40 @@ void RtcWriteByteEeprom(uint8_t addr, uint8_t val){
 	RtcSendByte( addr & 0xffu );
 	RtcSendByte( val & 0xffu );
 	RTC_CS_high();
+
+	// Wait until write is finished
+	while (( RtcReadStatusReg() & MCP795_STATUS_REG_WIP_msk ) == MCP795_STATUS_REG_WIP_msk ){
+		delay_ms(1);
+	}
 }
 
+// Write block to EEPROM
+void RtcWriteBlockEeprom(uint8_t addr, uint8_t *buf, uint8_t size){
+
+	// Enable latch
+	while (( RtcReadStatusReg() & MCP795_STATUS_REG_WEL_msk ) != MCP795_STATUS_REG_WEL_msk ){
+		RtcSetWriteEnableLatch( true );
+	}
+
+	// Check size
+	// In case of size is larger than page, reduce size to fit page
+	size = ( (( addr & 0x07u ) + size ) > 0x08u  ) ? ( size - ( addr & 0x07u )) : ( size );
+
+	RTC_CS_low();
+	RtcSendByte( MCP795_ISA_EEWRITE_cmd );
+	RtcSendByte( addr & 0xffu );
+
+	while(size--){
+		RtcSendByte(( *buf++ ) & 0xffu );
+	}
+
+	RTC_CS_high();
+
+	// Wait until write is finished
+	while (( RtcReadStatusReg() & MCP795_STATUS_REG_WIP_msk ) == MCP795_STATUS_REG_WIP_msk ){
+		delay_ms(1);
+	}
+}
 
 // Read byte from EEPROM
 uint8_t RtcReadByteEeprom(uint8_t addr){
@@ -202,6 +288,28 @@ uint8_t RtcReadByteEeprom(uint8_t addr){
 	return ( uint8_t ) ( data );
 }
 
+// Read block from EEPROm
+uint8_t* RtcReadBlockEeprom(uint8_t addr, uint8_t size){
+
+	// Reception buffer
+	static uint8_t buf[10];
+
+	// Check size
+	// In case of size is larger than page, reduce size to fit page
+	size = ( (( addr & 0x07u ) + size ) > 0x08u  ) ? ( size - ( addr & 0x07u )) : ( size );
+
+	RTC_CS_low();
+	RtcSendByte( MCP795_ISA_EEREAD_cmd );
+	RtcSendByte( addr & 0xffu );
+
+	for ( uint8_t i = 0; i < size; i++ ){
+		buf[i] = ( uint8_t ) ( RtcSendByte( 0x00u ) );
+	}
+
+	RTC_CS_high();
+
+	return (uint8_t*) ( &buf );
+}
 
 // Start/Stop on board oscillator
 void RtcEnableOnBoardOscillator(bool state){
@@ -266,7 +374,7 @@ void RtcSetTime(RtcTimeTypeDef *T){
 	uint8_t month_reg	= time_reg[5];
 
 	// 24 h format
-	hour_reg &= ~( MCP795_HOURS_12_24_msk );
+	hour_reg &= ~( MCP795_HOURS_12_24_msk | ( 0x01u << 5u ));
 
 	// Encode time
 	uint8_t buf[10] = 	{ 	RtcBcdEncoding( T -> sec ) | ( sec_reg & MCP795_SECONDS_START_OSC_msk ),
@@ -354,7 +462,25 @@ void RtcSetCalibrationFactor(uint8_t sign, uint8_t factor){
 
 	// Set calibration factor
 	RtcWriteByteSram(MCP795_CALIBRATION_addr, factor);
+}
 
+// Store calibration factor
+void RtcStoreCalibrationFactor(uint8_t sign, uint8_t factor){
+
+	uint8_t buf[3] = 	{	RTC_CAL_FACTOR_STORE_STATUS_calibrated,
+							sign,
+							factor
+						};
+
+	// Store to EEPROM
+	RtcWriteBlockEeprom(RTC_CAL_FACTOR_STATUS_STORE_addr, (uint8_t*) &buf, 3u);
+}
+
+// Read calibration factor
+uint8_t* RtcReadCalibrationFactor(){
+
+	uint8_t *buf = RtcReadBlockEeprom(RTC_CAL_FACTOR_STATUS_STORE_addr, 3u);
+	return (uint8_t*) buf;
 }
 
 
@@ -369,4 +495,143 @@ uint8_t RtcGetCalibrationFactorSign(void){
 	uint8_t hour_reg = RtcReadByteSram(MCP795_HOURS_addr);
 	return ( uint8_t ) ((( hour_reg & MCP795_HOURS_CALCSGN_msk ) == MCP795_HOURS_CALCSGN_msk ) ? ( RTC_CAL_SIGN_NEG ) : ( RTC_CAL_SIGN_POS ) );
 }
+
+
+// Set alarm 0
+// NOTE: This alarm will be set to match hours
+void RtcSetAlarm0(bool state, uint8_t hour){
+
+	// Alarm 0 on hours match
+	RtcWriteByteSram(MCP795_ALARM0_DAY_addr, MCP795_ALARM0_DAY_ALMOC_1_msk);
+
+	// Alarm 0 hour reg
+	RtcWriteByteSram(MCP795_ALARM0_HOURS_addr, RtcBcdEncoding(hour));
+
+	// Read control register
+	uint8_t ctrl_reg = RtcReadByteSram(MCP795_CONTROL_REG_addr);
+
+	// Enable alarm
+	if ( state ){
+		ctrl_reg |= ( MCP795_CONTROL_REG_ALM_0_msk );
+	}
+
+	// Disable alarm
+	else{
+		ctrl_reg &= ~( MCP795_CONTROL_REG_ALM_0_msk );
+	}
+
+	// Set control register
+	RtcWriteByteSram(MCP795_CONTROL_REG_addr, ctrl_reg);
+}
+
+
+// Alarm 0 status flag
+volatile bool alarm0Status_f = false;
+
+// Set/Get alarm 0 status flag
+void RtcSetAlarm0StatusFlag(bool status){
+	alarm0Status_f = status;
+}
+
+bool RtcGetAlarm0StatusFlag(){
+	return alarm0Status_f;
+}
+
+// Clear IRQ flag
+void RtcClearAlarm0IrqFlag(){
+
+	// Read alarm 0 day reg
+	uint8_t alarm0_day_reg = RtcReadByteSram(MCP795_ALARM0_DAY_addr);
+
+	// Clear alarm 0 interrupt flag
+	alarm0_day_reg &= ~( MCP795_ALARM0_DAY_ALM0IF_msk );
+
+	// Set day reg
+	RtcWriteByteSram(MCP795_ALARM0_DAY_addr, alarm0_day_reg);
+}
+
+
+// WDT status flag
+volatile bool wdtStatus_f = false;
+
+// Set WatchDog timer
+void RtcSetWdt(bool state){
+
+	// Enable WDT
+	if ( state ){
+
+		// Set to 16 seconds
+		RtcWriteByteSram(MCP795_WATCHDOG_addr, ( MCP795_WATCHDOG_WDTEN_msk | MCP795_WATCHDOG_WD_2_msk | MCP795_WATCHDOG_WD_0_msk ));
+	}
+
+	// Disable WDT
+	else{
+		uint8_t wdt_reg = RtcReadByteSram(MCP795_WATCHDOG_addr);
+		wdt_reg &= ~( MCP795_WATCHDOG_WDTEN_msk );
+		RtcWriteByteSram(MCP795_WATCHDOG_addr, wdt_reg);
+	}
+}
+
+// Reset WDT
+// NOTE: For reseting internal logic of WDT
+// special command is present
+void RtcResetWdt(){
+	RTC_CS_low();
+	RtcSendByte(MCP795_ISA_CLRWDT_cmd);
+	RTC_CS_high();
+}
+
+// Set/Get WDT status flag
+void RtcSetWdtStatusFlag(bool state){
+	wdtStatus_f = state;
+}
+
+bool RtcGetWdtStatusFlag(){
+	return wdtStatus_f;
+}
+
+// Clear WDT flag
+void RtcClearWdtIrqFlag(){
+
+	// Read WDT reg
+	uint8_t wdt_reg = RtcReadByteSram(MCP795_WATCHDOG_addr);
+
+	// Clear iterrupt flag
+	wdt_reg &= ~( MCP795_WATCHDOG_WDTIF_msk );
+
+	// Set WDT reg
+	RtcWriteByteSram(MCP795_WATCHDOG_addr, wdt_reg);
+}
+
+
+
+// External interrupt ISR
+void EXTI4_15_IRQHandler(){
+
+	// Alarm 0 interrupt
+	if (( EXTI -> PR & RTC_IRQ_msk ) == RTC_IRQ_msk ){
+
+		// Clear pending interrupt
+		EXTI -> PR |= ( RTC_IRQ_msk );
+
+		// Set alarm 0 flag
+		alarm0Status_f = true;
+	}
+
+	// WDT interrupt
+	if (( EXTI -> PR & RTC_WDT_msk ) == RTC_WDT_msk ){
+
+		// Clear pending interrupt
+		EXTI -> PR |= ( RTC_WDT_msk );
+
+		// Set WDT flag
+		wdtStatus_f = true;
+
+		// Clear IRQ flag in RTC chip
+		RtcClearWdtIrqFlag();
+	}
+}
+
+
+
 
