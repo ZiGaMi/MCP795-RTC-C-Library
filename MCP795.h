@@ -1,69 +1,26 @@
-/*
- * RTC.h
- *
- *  Created on: 13.05.2019
- *      Author: ziga.miklosic
- */
+//////////////////////////////////////////////////////////////
+// 
+//	project:		sleep monitor
+//	date:			27.12.2019
+//	
+//	author:			Ziga Miklosic
+//
+//////////////////////////////////////////////////////////////
 
-#ifndef ACCESSORIES_RTC_H_
-#define ACCESSORIES_RTC_H_
+#ifndef _RTC_H_
+#define _RTC_H_
 
-#include "stm32l0xx.h"
+//////////////////////////////////////////////////////////////
+//	INCLUDES
+//////////////////////////////////////////////////////////////
+#include "stm32f0xx.h"
 #include "stdbool.h"
+#include "stdint.h"
 
-#include "Drivers/SpiDrv.h"
-#include "Drivers/ClockDrv.h"
-#include "SystemDefines.h"
+//////////////////////////////////////////////////////////////
+//	DEFINITIONS
+//////////////////////////////////////////////////////////////
 
-
-/*******************************************************
- *
- * 	RTC is used for timestamp of collected data
- * 	when storing it on SD Card.
- *
- *	RTC type: Microchip MCP795W10
- *
- *******************************************************/
-
-
-/*
- * 	Port/Pins
- */
-
-// RTC port
-#define RTC_port			( GPIOB )
-
-// Watchdog timer
-#define RTC_WDT_bp			( 10ul )
-#define RTC_WDT_msk			( 0x01u << RTC_WDT_bp )
-
-// Alarm interrupt
-#define RTC_IRQ_bp			( 11ul )
-#define RTC_IRQ_msk			( 0x01u << RTC_IRQ_bp )
-
-
-
-/*
- *		SPI Specifics
- */
-#define RTC_SPI					( SPI2 )
-
-
-
-
-/*
- * 	RTC data
- */
-typedef struct{
-
-	uint16_t	year;	// 1970..2106
-	uint8_t		month;	// 1..12
-	uint8_t		mday;	// 1..31
-	uint8_t		hour;	// 0..23
-	uint8_t		min;	// 0..59
-	uint8_t		sec;	// 0..59
-	uint8_t		wday;	// 0..6 (Sun..Sat)
-}RtcTimeTypeDef;
 
 // RTC hardcoded present year
 #define RTC_PRESET_YEAR 						( uint16_t ) ( 2019u )
@@ -72,124 +29,22 @@ typedef struct{
 #define RTC_CAL_SIGN_POS						( uint8_t ) ( 0x00u )
 #define RTC_CAL_SIGN_NEG						( uint8_t ) ( 0x01u )
 
-// Calibration factor store address (EEPROM)
+
+// Calibration factor store address (eeprom)
 #define RTC_CAL_FACTOR_STATUS_STORE_addr		( uint8_t ) ( 0x10u )
 #define RTC_CAL_FACTOR_VAL_STORE_addr			( uint8_t ) ( 0x11u )
 #define RTC_CAL_FACTOR_SIGN_STORE_addr			( uint8_t ) ( 0x12u )
 
-// Calibration factor store status
-#define RTC_CAL_FACTOR_STORE_STATUS_none		( uint8_t )	( 0x90u )
-#define RTC_CAL_FACTOR_STORE_STATUS_calibrated	( uint8_t ) ( 0xCEu )
+
+// Is device calibrated bit
+#define RTC_CAL_FACTOR_STATUS_DEV_CAL_BP		( uint8_t ) ( 0u )
+#define RTC_CAL_FACTOR_STATUS_DEV_CAL_MSK		( uint8_t ) ( 0x01u << RTC_CAL_FACTOR_STATUS_DEV_CAL_BP )
+
+// Is calibration value stored
+#define RTC_CAL_FACTOR_STATIS_CAL_STORE_BP		(uint8_t) ( 1u )
+#define RTC_CAL_FACTOR_STATIS_CAL_STORE_MSK		(uint8_t) ( 0x01u << RTC_CAL_FACTOR_STATIS_CAL_STORE_BP )
 
 
-
-/*
- * 	Functions
- */
-
-// Initialize RTC
-void RtcInit(RtcTimeTypeDef*);
-
-// Configure SPI for RTC
-void RtcSetupSpi(void);
-
-// Send byte
-uint8_t RtcSendByte(uint8_t);
-
-// Set write enable latch
-void RtcSetWriteEnableLatch(bool);
-
-// Write byte to SRAM
-void RtcWriteByteSram(uint8_t, uint8_t);
-
-// Write block to SRAM
-void RtcWriteBlockSram(uint8_t, uint8_t*, uint8_t);
-
-// Read byte from SRAM
-uint8_t RtcReadByteSram(uint8_t);
-
-// Read block of SRAM
-uint8_t* RtcReadBlockSram(uint8_t, uint8_t);
-
-// Write byte to EEPROM
-void RtcWriteByteEeprom(uint8_t, uint8_t);
-
-// Write block to EEPROM
-void RtcWriteBlockEeprom(uint8_t, uint8_t*, uint8_t);
-
-// Read byte from EEPROM
-uint8_t RtcReadByteEeprom(uint8_t);
-
-// Read block from EEPROm
-uint8_t* RtcReadBlockEeprom(uint8_t, uint8_t);
-
-// Read status register
-uint8_t RtcReadStatusReg(void);
-
-// Start/Stop on board oscillator
-void RtcEnableOnBoardOscillator(bool);
-
-// Binary-coded decimal encoding
-uint8_t RtcBcdEncoding(uint8_t);
-
-// Binary-coded decimal decoding
-uint8_t RtcBcdDecoding(uint8_t);
-
-// Set time
-void RtcSetTime(RtcTimeTypeDef*);
-
-// Get time
-void RtcGetTime(RtcTimeTypeDef*);
-
-// Get power-up time
-void RtcGetPowerUpTime(RtcTimeTypeDef*);
-
-// Get power-down time
-void RtcGetPowerDownTime(RtcTimeTypeDef*);
-
-// Parse time packet config
-void RtcParsePCSetTimeCommand(uint8_t*, RtcTimeTypeDef*);
-
-// Set calibration factor
-void RtcSetCalibrationFactor(uint8_t, uint8_t);
-
-// Get calibration factor
-uint8_t RtcGetCalibrationFactor(void);
-
-// Get calibration factor sign
-uint8_t RtcGetCalibrationFactorSign(void);
-
-// Set alarm 0
-// NOTE: This alarm will be set to match hours
-void RtcSetAlarm0(bool, uint8_t);
-
-// Set/Get alarm 0 status flag
-void RtcSetAlarm0StatusFlag(bool);
-bool RtcGetAlarm0StatusFlag(void);
-
-// Clear IRQ flag
-void RtcClearAlarm0IrqFlag(void);
-
-// Set WatchDog timer
-void RtcSetWdt(bool);
-
-// Reset WDT
-// NOTE: For reseting internal logic of WDT
-// special command is present
-void RtcResetWdt(void);
-
-// Set/Get WDT status flag
-void RtcSetWdtStatusFlag(bool);
-bool RtcGetWdtStatusFlag(void);
-
-// Clear WDT flag
-void RtcClearWdtIrqFlag(void);
-
-// Store calibration factor
-void RtcStoreCalibrationFactor(uint8_t, uint8_t);
-
-// Read calibration factor
-uint8_t* RtcReadCalibrationFactor(void);
 
 
 /*
@@ -473,4 +328,47 @@ uint8_t* RtcReadCalibrationFactor(void);
 #define MCP795_ISA_CLRRAM					( uint8_t ) ( 0x54u )
 
 
-#endif /* ACCESSORIES_RTC_H_ */
+
+//////////////////////////////////////////////////////////////
+//	VARIABLES
+//////////////////////////////////////////////////////////////
+
+typedef struct
+{
+	const char* wday_name[7];		// day name
+	uint16_t	year;				// 1970..2106
+	uint8_t		month;				// 1..12
+	uint8_t		mday;				// 1..31
+	uint8_t		hour;				// 0..23
+	uint8_t		min;				// 0..59
+	uint8_t		sec;				// 0..59
+	uint8_t		wday;				// 0..6 (Sun..Sat)
+}rtc_time_t;
+
+
+
+
+//////////////////////////////////////////////////////////////
+// FUNCTIONS PROTOTYPES
+//////////////////////////////////////////////////////////////
+
+// Initialize RTC
+void rtc_init(void);
+
+// Set time
+void rtc_set_time(void);
+
+// Update time struct
+void rtc_update_time(void);
+
+// Get 
+rtc_time_t *rtc_get_time(void);
+
+
+
+
+//////////////////////////////////////////////////////////////
+// END OF FILE
+//////////////////////////////////////////////////////////////
+
+#endif // _RTC_H_
